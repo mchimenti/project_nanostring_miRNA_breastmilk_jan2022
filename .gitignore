@@ -2,3 +2,4 @@
 *.RCC
 *.xlsx
 *.docx
+.DS_Store
