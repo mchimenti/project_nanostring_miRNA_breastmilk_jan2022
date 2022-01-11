@@ -233,7 +233,7 @@ panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...) {
 meta_df_full <- readxl::read_xlsx('cleaned_metadata.xlsx', sheet = 'Sheet1', col_names = TRUE, col_types = "guess")
 meta_df <- meta_df_full %>% dplyr::select(c(`file name`, batch, `study ID`, Age, Race, `prepregnancy BMI`, `current  BMI`, `Breast milk colllection date post delivary`, `Delivery type`))
 
-colnames(meta_df) <- c("filename","batch","sampleID","age","race","prepreg_BMI","curr_BMI","milk_col_dt", "delivery")
+colnames(meta_df) <- c("filename","batch","SampleID","age","race","prepreg_BMI","curr_BMI","milk_col_dt", "delivery")
 meta_df$batch[28:40] <- "4"  #fix the singleton batch 
 
 ```
@@ -264,6 +264,8 @@ library(ggpubr)
 
 Sample batch appears to be at possibly partially confounded with mean BMI in both pre- and post-pregnancy BMI. We may want to try excluding batches 6 and 7 to see if discovered DE miRNAs are robust to the presence of these batches with higher mean BMI.  
 
+However, when we look at % overweight after classifying according to BMI > 24.25, batches 6-8 aren't too far from the others.  Batch 9 has only lean samples.  
+
 ```{r, meta_EDA2}
 p1 <- ggboxplot(meta_df, x = "batch", y = "prepreg_BMI",
                 color = "batch",
@@ -278,6 +280,17 @@ p2 <- ggboxplot(meta_df, x = "batch", y = "curr_BMI",
  
 p2
 
+meta_df <- meta_df %>% dplyr::mutate(
+  status = dplyr::case_when(
+    .data$prepreg_BMI < 24.25 ~ "Lean",
+    .data$prepreg_BMI >=24.25 ~ "Overweight",
+    TRUE ~ NA_character_
+    )
+)
+
+p3 <- ggplot(meta_df, aes(y=batch, fill=status)) + geom_bar(position="fill") + ggtitle("Fraction Overweight by Batch; BMI > 24.25")
+p3
+
 ```
 
 ### Correlations between dataset variables 
@@ -287,7 +300,7 @@ Only pre- and current BMI appear to be correlated in a significant way.
 ```{r, corr}
 
 
-df <- meta_df %>% select(c(batch,age,prepreg_BMI,curr_BMI,milk_col_dt)) %>% mutate_at(vars(batch),factor) %>% as.data.frame()
+df <- meta_df %>% dplyr::select(c(batch,age,prepreg_BMI,curr_BMI,milk_col_dt)) %>% mutate_at(vars(batch),factor) %>% as.data.frame()
 groups <- df[,1]
 pairs(df[,2:5],                     # Data frame of variables
       labels = colnames(df[,2:5]),  # Variable names
@@ -357,14 +370,11 @@ head(pData, 5)
 head(raw_expression, 5)
 ```
 
-### Populate empty tabless from RCC
+### Populate empty tables from RCC
 
 ```{r, create_pData, message=FALSE,warning=FALSE}
-#### INPUT: rcc - input from rcc (use readRcc from NanoStringQCPro)
-# #### OUTPUT: flag for linearity for positive controls
-# 
 
-## I have to override the positiveLinQC function for this panel b/c it uses two types of positive controls and that confuses the grepl search.  
+## NOTE: I have to override the positiveLinQC function for this panel b/c it uses two types of positive controls and that confuses the grepl search.  
 
 positiveLinQC <- function(rcc){
 
@@ -378,6 +388,8 @@ positiveLinQC <- function(rcc){
  
  }
 
+## 
+## Populate pData and raw expr tables from RCC files
 for (i in 1:length(files.RCC)){
   #i = 1 
   print(i)
@@ -393,12 +405,65 @@ for (i in 1:length(files.RCC)){
   pData$positiveLinearityQC[i] = positiveLinQC(rcc)
 }
 
-pData$SampleID <- meta_df$sampleID
+## Munge pData and metadata together; create treatment classes
+pData$SampleID <- meta_df$SampleID
+pData <- dplyr::left_join(pData, meta_df, by = "SampleID")
+
 
 head(pData)
 ```
 
-## QC data
+## Quality Control Analysis
+
+No QC flags are set on any of the 80 samples: 
+```{r, checkQCflags}
+pData[,7:10]
+```
+
+This hidden code block does more setup and preparation for analysis.  
+```{r, make_pData, warning=FALSE}
+raw = raw_expression[,-c(1:2)]
+fData = raw_expression[,c(1:2)]
+rownames(raw) = fData$Gene
+cIdx <- fData$Gene[fData$Class == "Housekeeping"]
+pData$HK_Gene_Miss = colSums(raw[cIdx,] == 0)
+rownames(fData) = fData$Gene
+rownames(raw) = fData$Gene
+rownames(pData) = colnames(raw)
+
+## making variance stabilized raw counts for later PCA plotting 
+#dds_raw_counts <- DESeqDataSetFromMatrix(as.matrix(raw),colData=pData,design=~Group)
+#vst_raw_counts <- DESeq2::varianceStabilizingTransformation(dds_raw_counts)
+```
+
+### Check Housekeeping Genes
+
+So let's proceed to checking whether housekeeping genes correlate with treatment: 
+```{r,housekeeping}
+#### CHECK IF housekeeping Genes ARE ASSOCIATED WITH PRIMARY PHENO
+hk_raw = raw[cIdx,]
+pval = vector(length = nrow(hk_raw))
+
+require(MASS)
+
+for (i in 1:nrow(hk_raw)){
+  
+  reg = glm.nb(as.numeric(hk_raw[i,]) ~ as.factor(pData$status))
+  pval[i] = coef(summary(reg))[2,4]
+  
+}
+
+```
+
+### P-values
+
+These are the p-values of the relationship between the housekeeping genes and the treatment groups.  There appears to be no correlation between the housekeeping miRNAs and the obese/lean status.  
+
+```{r, pval_hk}
+pval <- pval %>% as_tibble() %>% mutate(hkgene = rownames(hk_raw))
+pval 
+
+```
 
 ## Normalize data
 
