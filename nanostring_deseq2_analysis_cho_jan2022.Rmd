@@ -39,9 +39,9 @@ Risso D, Ngai J, Speed T, Dudoit S (2014). “Normalization of RNA-seq data usin
 
 Love MI, Huber W, Anders S (2014). “Moderated estimation of fold change and dispersion for RNA-seq data with DESeq2.” Genome Biology, 15, 550. doi: 10.1186/s13059-014-0550-8.
 
-#### Library imports 
+## Library imports 
 Click the "Code" button to see hidden code.  
-```{r, imports, warning=FALSE, message=FALSE}
+```{r, imports, warning=FALSE, message=FALSE, class.source = 'fold-show'}
 
 ## Format and plotting 
 library(ggrepel)
@@ -68,7 +68,7 @@ library(magrittr)
 
 ```
 
-#### Function definitions 
+## Function definitions 
 
 ```{r, function_defs}
 ## Volcano Plot
@@ -113,6 +113,19 @@ do_vol_plot <- function(df, sig=0.05, fc=0.5, size = 4){
   return (p)
 }
 
+# Function to add correlation coefficients
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...) {
+    usr <- par("usr")
+    on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    Cor <- abs(cor(x, y)) # Remove abs function if desired
+    txt <- paste0(prefix, format(c(Cor, 0.123456789), digits = digits)[1])
+    if(missing(cex.cor)) {
+        cex.cor <- 0.4 / strwidth(txt)
+    }
+    text(0.5, 0.5, txt,
+         cex = 1 + cex.cor * Cor) # Resize the text by level of correlation
+}
 
 #### THESE FUNCTIONS ARE IMPORTED BY 'NANONORMITER' PACKAGE
 # FOR REFERENCE, HERE ARE THE QC CHECKS: 
@@ -211,18 +224,11 @@ do_vol_plot <- function(df, sig=0.05, fc=0.5, size = 4){
 
 ```
 
-# RUVSeq Analysis 
-
-RUV-seq method of Love et. al. for best-practices normalization and removal of unwanted technical artifacts
-
-Here, we will follow the method of Love, et. al. (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8138885/):  
-
-**"Using DESeq2 [25], we identified genes differentially expressed in NK cells primed by CTV-1 or IL-2 cytokines compared to unprimed NK cells at FDR-adjusted equation M22. The two normalization methods led to a different number of differentially expressed genes with a limited overlap of significant genes by both methods (Figure 4A). The raw equation M23-value histograms from differential expression analysis using nSolver-normalized expression exhibited a slope toward 0 for equation M24-values under 0.3, which can indicate issues with unaccounted-for correlations among samples [42], such as residual technical variation. The distributions of equation M25-values using the RUVSeq-normalized data were closer to uniform throughout the range [0,1] for most genes (Figure 4B). While the log2-fold changes were correlated between the two normalization procedures, the genes found to be differentially expressed only with nSolver-normalized data tended to have large standard errors with RUVSeq-normalized data and therefore not statistically significant using RUVSeq (Figure 4C). These differences in DE results emphasize the importance of properly validating normalization prior to downstream genomic analyses."**
-
+# Exploratory Data Analysis 
 
 ## Import metadata
 
-```{r, import_meta}
+```{r, import_meta, class.source = 'fold-show'}
 
 meta_df_full <- readxl::read_xlsx('cleaned_metadata.xlsx', sheet = 'Sheet1', col_names = TRUE, col_types = "guess")
 meta_df <- meta_df_full %>% dplyr::select(c(`file name`, batch, `study ID`, Age, Race, `prepregnancy BMI`, `current  BMI`, `Breast milk colllection date post delivary`, `Delivery type`))
@@ -234,9 +240,9 @@ meta_df$batch[28:40] <- "4"  #fix the singleton batch
 
 Let's do some exploratory analysis on the metadata before starting on the Nanostring analysis. We're looking for correlated variables or correlations between batches and variables. 
 
-### Exploratory Analysis {.tabset}
+## Exploratory Plots 
 
-## Correlation between pre-preg BMI and delivery? 
+### Correlation between pre-preg BMI and delivery? 
 ```{r, meta_EDA}
 library(ggpubr)
 # Box plots with jittered points
@@ -254,9 +260,9 @@ library(ggpubr)
 
 ```
  
-## Correlation between batch and BMI?
+### Correlation between batch and mean BMI
 
-Sample batch appears to be at least partially confounded with mean BMI in both pre- and post-pregnancy BMI.  
+Sample batch appears to be at possibly partially confounded with mean BMI in both pre- and post-pregnancy BMI. We may want to try excluding batches 6 and 7 to see if discovered DE miRNAs are robust to the presence of these batches with higher mean BMI.  
 
 ```{r, meta_EDA2}
 p1 <- ggboxplot(meta_df, x = "batch", y = "prepreg_BMI",
@@ -272,6 +278,15 @@ p2 <- ggboxplot(meta_df, x = "batch", y = "curr_BMI",
  
 p2
 
+```
+
+### Correlations between dataset variables 
+
+Only pre- and current BMI appear to be correlated in a significant way.  
+
+```{r, corr}
+
+
 df <- meta_df %>% select(c(batch,age,prepreg_BMI,curr_BMI,milk_col_dt)) %>% mutate_at(vars(batch),factor) %>% as.data.frame()
 groups <- df[,1]
 pairs(df[,2:5],                     # Data frame of variables
@@ -279,15 +294,18 @@ pairs(df[,2:5],                     # Data frame of variables
       pch = 21,                 # Pch symbol
       bg = rainbow(9)[groups],  # Background color of the symbol (pch 21 to 25)
       col = rainbow(9)[groups], # Border color of the symbol
-      main = "BM dataset",    # Title of the plot
+      main = "Breastmilk dataset (batch=color)",    # Title of the plot
       row1attop = TRUE,         # If FALSE, changes the direction of the diagonal
       gap = 1,                  # Distance between subplots
       cex.labels = NULL,        # Size of the diagonal text
-      font.labels = 1)          # Font style of the diagonal text
+      font.labels = 1,
+      lower.panel = panel.smooth,
+      upper.panel = panel.cor)          # Font style of the diagonal text
 ```
 
+### Variable distributions 
 
-
+Here, we look at the distribution of age and BMI in the dataset.  
 ```{r}
  # Density plot with mean lines and marginal rug
 # :::::::::::::::::::::::::::::::::::::::::::::::::::
@@ -307,19 +325,24 @@ p
 ```
 
 
+# RUV-seq QC and Normalization 
 
+RUV-seq method of Love et. al. for best-practices normalization and removal of unwanted technical artifacts
 
+Here, we will follow the method of Love, et. al. (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8138885/):  
 
-```
+**"Using DESeq2 [25], we identified genes differentially expressed in NK cells primed by CTV-1 or IL-2 cytokines compared to unprimed NK cells at FDR-adjusted equation M22. The two normalization methods led to a different number of differentially expressed genes with a limited overlap of significant genes by both methods (Figure 4A). The raw equation M23-value histograms from differential expression analysis using nSolver-normalized expression exhibited a slope toward 0 for equation M24-values under 0.3, which can indicate issues with unaccounted-for correlations among samples [42], such as residual technical variation. The distributions of equation M25-values using the RUVSeq-normalized data were closer to uniform throughout the range [0,1] for most genes (Figure 4B). While the log2-fold changes were correlated between the two normalization procedures, the genes found to be differentially expressed only with nSolver-normalized data tended to have large standard errors with RUVSeq-normalized data and therefore not statistically significant using RUVSeq (Figure 4C). These differences in DE results emphasize the importance of properly validating normalization prior to downstream genomic analyses."**
 
-
-
-## Import RCC files 
+## Import data 
 
 ### Create pheno and expr tables
 ```{r, import_data}
-files.RCC = list.files("./RCC", full.names = TRUE)
-#files.RCC = files.RCC[grepl('RCC',files.RCC)]
+#getwd()
+files.RCC = list.files(".", full.names = TRUE)
+files.RCC = files.RCC[grepl('RCC',files.RCC)]
+
+head(files.RCC)
+
 ng = nrow(readRcc(files.RCC[1])$Code_Summary)
 ncol = length(files.RCC)
 
@@ -333,3 +356,65 @@ raw_expression[,1:2] = readRcc(files.RCC[1])$Code_Summary[,c(2,1)]
 head(pData, 5)
 head(raw_expression, 5)
 ```
+
+### Populate empty tabless from RCC
+
+```{r, create_pData, message=FALSE,warning=FALSE}
+#### INPUT: rcc - input from rcc (use readRcc from NanoStringQCPro)
+# #### OUTPUT: flag for linearity for positive controls
+# 
+
+## I have to override the positiveLinQC function for this panel b/c it uses two types of positive controls and that confuses the grepl search.  
+
+positiveLinQC <- function(rcc){
+
+     counts = rcc$Code_Summary
+     #posControls = as.numeric(counts$Count[grepl('POS_',counts$Name)])
+     posControls = as.numeric(counts$Count[grepl('^POS_',counts$Name)])
+     known = c(128,128/4,128/16,128/64,128/256,128/(256*4))
+     r2 = summary(lm(sort(posControls)~sort(known)))$r.squared
+     if(!(r2 > .95) | is.na(r2)) {return('Flag')}
+     if(r2 > .95) {return('No flag')}
+ 
+ }
+
+for (i in 1:length(files.RCC)){
+  #i = 1 
+  print(i)
+  rcc = readRcc(files.RCC[i])
+  raw = rcc$Code_Summary
+  
+  raw_expression[,i+2] = as.numeric(raw$Count)
+  colnames(raw_expression)[i+2] = strsplit(files.RCC[i],'_')[[1]][2:4]
+  pData[i,2:7] = as.vector(rcc$Sample_Attributes)
+  pData$imagingQC[i] = imagingQC(rcc)
+  pData$bindingDensityQC[i] = bindingDensityQC(rcc,.05,2.25)
+  pData$limitOfDetectionQC[i] = limitOfDetectionQC(rcc)
+  pData$positiveLinearityQC[i] = positiveLinQC(rcc)
+}
+
+pData$SampleID <- meta_df$sampleID
+
+head(pData)
+```
+
+## QC data
+
+## Normalize data
+
+# DESeq2 DE analysis 
+
+## Create DESEQ2 object 
+
+## Create model 
+
+## Analyze DE changes
+
+## Visualize DE miRNAs
+
+# Conclusions
+
+# Computational Environment 
+
+## Session Info 
+
