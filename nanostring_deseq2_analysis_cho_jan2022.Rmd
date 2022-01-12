@@ -386,7 +386,16 @@ positiveLinQC <- function(rcc){
      if(!(r2 > .95) | is.na(r2)) {return('Flag')}
      if(r2 > .95) {return('No flag')}
  
- }
+}
+
+## Override this function to account for two types of Neg controls.  
+limitOfDetectionQC <- function(rcc,numSD = 0){
+  counts = rcc$Code_Summary
+  posE = as.numeric(counts$Count[counts$Name == 'POS_E'])
+  negControls = as.numeric(counts$Count[grepl('^NEG',counts$Name)])
+  if(!(posE > mean(negControls) + numSD*sd(negControls))) {return('Flag')}
+  if (posE > mean(negControls) + numSD*sd(negControls)) {return('No flag')}
+  }
 
 ## 
 ## Populate pData and raw expr tables from RCC files
@@ -397,7 +406,7 @@ for (i in 1:length(files.RCC)){
   raw = rcc$Code_Summary
   
   raw_expression[,i+2] = as.numeric(raw$Count)
-  colnames(raw_expression)[i+2] = strsplit(files.RCC[i],'_')[[1]][2:4]
+  #colnames(raw_expression)[i+2] = strsplit(files.RCC[i],'_')[[1]][2:4]
   pData[i,2:7] = as.vector(rcc$Sample_Attributes)
   pData$imagingQC[i] = imagingQC(rcc)
   pData$bindingDensityQC[i] = bindingDensityQC(rcc,.05,2.25)
@@ -408,7 +417,9 @@ for (i in 1:length(files.RCC)){
 ## Munge pData and metadata together; create treatment classes
 pData$SampleID <- meta_df$SampleID
 pData <- dplyr::left_join(pData, meta_df, by = "SampleID")
+rownames(pData) <- pData$SampleID 
 
+colnames(raw_expression)[3:82] <- pData$SampleID
 
 head(pData)
 ```
@@ -429,7 +440,7 @@ cIdx <- fData$Gene[fData$Class == "Housekeeping"]
 pData$HK_Gene_Miss = colSums(raw[cIdx,] == 0)
 rownames(fData) = fData$Gene
 rownames(raw) = fData$Gene
-rownames(pData) = colnames(raw)
+#rownames(pData) = colnames(raw)
 
 ## making variance stabilized raw counts for later PCA plotting 
 #dds_raw_counts <- DESeqDataSetFromMatrix(as.matrix(raw),colData=pData,design=~Group)
@@ -438,7 +449,7 @@ rownames(pData) = colnames(raw)
 
 ### Check Housekeeping Genes
 
-So let's proceed to checking whether housekeeping genes correlate with treatment: 
+So let's proceed to checking whether housekeeping genes correlate with treatment.  RUV-seq normalization assumes that housekeeping genes DO NOT correlate with treatment or biology of interest.  
 ```{r,housekeeping}
 #### CHECK IF housekeeping Genes ARE ASSOCIATED WITH PRIMARY PHENO
 hk_raw = raw[cIdx,]
@@ -457,15 +468,84 @@ for (i in 1:nrow(hk_raw)){
 
 ### P-values
 
-These are the p-values of the relationship between the housekeeping genes and the treatment groups.  There appears to be no correlation between the housekeeping miRNAs and the obese/lean status.  
+These are the p-values of the relationship between the housekeeping genes and the treatment groups.  There appears to be no correlation between the housekeeping miRNAs and the obese/lean status (this is good!)
 
 ```{r, pval_hk}
 pval <- pval %>% as_tibble() %>% mutate(hkgene = rownames(hk_raw))
 pval 
 
 ```
+### Check limit of detection 
+We want to define how many genes are below the limit of detection (i.e., >1SD below the negative control mean).  
 
-## Normalize data
+```{r, blod}
+neg_raw <- raw %>% filter(row.names(raw) %in% c("NEG_A","NEG_B","NEG_C","NEG_D","NEG_E","NEG_F","NEG_G","NEG_H"))
+lod <- colMeans(neg_raw) - apply(neg_raw,1,sd)
+num_endo_blod <- colSums(raw_expression[raw_expression$Class == "Endogenous1", -c(1:2)] < lod)
+num_hk_blod <- colSums(raw_expression[raw_expression$Class == "Housekeeping", -c(1:2)] < lod)
+
+## Check the BLOD numbers by batch 
+df <- data.frame(below_lim = num_endo_blod, batch = pData$batch, name=pData$SampleID)
+p <- ggbarplot(df, y="below_lim", x="name", color="batch", fill="batch")
+p <- p + ggtitle("Number Endogenous miRNAs Below Limit of Detection by Batch")
+p
+```
+
+We can clearly see a batch effect with Batch 4 having larger than normal "Below Limit of Detection" miRNAs.  
+
+## Apply RUVg normalization 
+
+Now, we remove correlated negative control genes and apply RUVg normalization: 
+```{r,RUV_normalization, results='hide', message=FALSE}
+
+## k = 1,2, and 3 
+## k is the number of sources of technical confounding (i.e., suspected batches)
+norm.dat.k1 <- NanoNormIter::RUV_total(raw,pData,fData,k = 1)
+norm.dat.k2 <- NanoNormIter::RUV_total(raw,pData,fData,k = 2)
+norm.dat.k3 <- NanoNormIter::RUV_total(raw,pData,fData,k = 3)
+                               
+```
+
+## RLE analysis
+
+Here, we visualize the raw and RUV normalized (k=1,2, or 3; k is the number of sources of suspected technical confounding) datasets using an RLE plot.  An RLE plot shows the boxplots of the log-ratios of the gene-level read counts of each sample to those of a reference sample (defined as the median across the samples). Ideally, the distributions should be centered around the zero line and as tight as possible. Clear deviations indicate the need for normalization and/or the presence of outlying samples.
+
+### Raw Data 
+
+These are the raw, non-normalized counts.  Y-axis is the median deviation of log expression.  We can see systematic deviations from the median line (zero).  This is bad and indicates a definite batch effect.  
+```{r, vis_raw_RLE}
+
+## Raw data
+EDASeq::plotRLE(as.matrix(raw), cex.lab=0.5)
+
+```
+
+### RUVg (k=1)
+
+These are RUVSeq normalized with K=1. The batch effect in samples ~30-40 has been removed.  
+```{r, vis_RUV_RLE_1}
+## K=1
+EDASeq::plotRLE(norm.dat.k1$set)
+
+```
+
+### RUVg (k=2)
+
+These are RUVSeq normalized with k=2. 
+```{r, vis_RUV_RLE_2}
+## K=2
+EDASeq::plotRLE(norm.dat.k2$set)
+```
+
+### RUVg (k=3)
+
+These are RUVSeq normalized with k=3. 
+```{r, vis_RUV_RLE_3}
+## K=3
+EDASeq::plotRLE(norm.dat.k3$set)
+```
+
+
 
 # DESeq2 DE analysis 
 
