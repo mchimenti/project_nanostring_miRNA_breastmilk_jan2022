@@ -281,15 +281,25 @@ p2 <- ggboxplot(meta_df, x = "batch", y = "curr_BMI",
 p2
 
 meta_df <- meta_df %>% dplyr::mutate(
-  status = dplyr::case_when(
+  status_ov = dplyr::case_when(
     .data$prepreg_BMI < 24.25 ~ "Lean",
-    .data$prepreg_BMI >=24.25 ~ "Overweight",
+    .data$prepreg_BMI >=24.25 ~ "Over_Obese",
     TRUE ~ NA_character_
     )
-)
+) %>% dplyr::mutate(
+  status_ob = dplyr::case_when(
+    .data$prepreg_BMI < 24.25 ~ "Lean",
+    .data$prepreg_BMI > 30 ~ "Obese",
+    (.data$prepreg_BMI >= 24.25 & .data$prepreg_BMI <= 30) ~ "Overweight"
+    )
+)  
 
-p3 <- ggplot(meta_df, aes(y=batch, fill=status)) + geom_bar(position="fill") + ggtitle("Fraction Overweight by Batch; BMI > 24.25")
+p3 <- ggplot(meta_df, aes(y=batch, fill=status_ov)) + geom_bar(position="fill") + ggtitle("Fraction Overweight by Batch; BMI > 24.25")
 p3
+
+p4 <- ggplot(meta_df, aes(y=batch, fill=status_ob)) + geom_bar(position="fill") + ggtitle("Fraction Obese by Batch; BMI > 30")
+
+p4
 
 ```
 
@@ -297,7 +307,7 @@ p3
 
 Only pre- and current BMI appear to be correlated in a significant way.  
 
-```{r, corr}
+```{r, corr, class.source = 'fold-show'}
 
 
 df <- meta_df %>% dplyr::select(c(batch,age,prepreg_BMI,curr_BMI,milk_col_dt)) %>% mutate_at(vars(batch),factor) %>% as.data.frame()
@@ -316,10 +326,10 @@ pairs(df[,2:5],                     # Data frame of variables
       upper.panel = panel.cor)          # Font style of the diagonal text
 ```
 
-### Variable distributions 
+## Variable distributions 
 
 Here, we look at the distribution of age and BMI in the dataset.  
-```{r}
+```{r, dist}
  # Density plot with mean lines and marginal rug
 # :::::::::::::::::::::::::::::::::::::::::::::::::::
 # Change outline and fill colors by groups ("sex")
@@ -349,7 +359,7 @@ Here, we will follow the method of Love, et. al. (https://www.ncbi.nlm.nih.gov/p
 ## Import data 
 
 ### Create pheno and expr tables
-```{r, import_data}
+```{r, import_data, class.source = 'fold-show'}
 #getwd()
 files.RCC = list.files(".", full.names = TRUE)
 files.RCC = files.RCC[grepl('RCC',files.RCC)]
@@ -442,9 +452,7 @@ rownames(fData) = fData$Gene
 rownames(raw) = fData$Gene
 #rownames(pData) = colnames(raw)
 
-## making variance stabilized raw counts for later PCA plotting 
-#dds_raw_counts <- DESeqDataSetFromMatrix(as.matrix(raw),colData=pData,design=~Group)
-#vst_raw_counts <- DESeq2::varianceStabilizingTransformation(dds_raw_counts)
+#
 ```
 
 ### Check Housekeeping Genes
@@ -459,7 +467,7 @@ require(MASS)
 
 for (i in 1:nrow(hk_raw)){
   
-  reg = glm.nb(as.numeric(hk_raw[i,]) ~ as.factor(pData$status))
+  reg = glm.nb(as.numeric(hk_raw[i,]) ~ as.factor(pData$status_ov))
   pval[i] = coef(summary(reg))[2,4]
   
 }
@@ -506,11 +514,11 @@ norm.dat.k3 <- NanoNormIter::RUV_total(raw,pData,fData,k = 3)
                                
 ```
 
-## RLE analysis
+### RLE analysis {.tabset}
 
 Here, we visualize the raw and RUV normalized (k=1,2, or 3; k is the number of sources of suspected technical confounding) datasets using an RLE plot.  An RLE plot shows the boxplots of the log-ratios of the gene-level read counts of each sample to those of a reference sample (defined as the median across the samples). Ideally, the distributions should be centered around the zero line and as tight as possible. Clear deviations indicate the need for normalization and/or the presence of outlying samples.
 
-### Raw Data 
+#### Raw Data 
 
 These are the raw, non-normalized counts.  Y-axis is the median deviation of log expression.  We can see systematic deviations from the median line (zero).  This is bad and indicates a definite batch effect.  
 ```{r, vis_raw_RLE}
@@ -520,7 +528,7 @@ EDASeq::plotRLE(as.matrix(raw), cex.lab=0.5)
 
 ```
 
-### RUVg (k=1)
+#### RUVg (k=1)
 
 These are RUVSeq normalized with K=1. The batch effect in samples ~30-40 has been removed.  
 ```{r, vis_RUV_RLE_1}
@@ -529,7 +537,7 @@ EDASeq::plotRLE(norm.dat.k1$set)
 
 ```
 
-### RUVg (k=2)
+#### RUVg (k=2)
 
 These are RUVSeq normalized with k=2. 
 ```{r, vis_RUV_RLE_2}
@@ -537,29 +545,189 @@ These are RUVSeq normalized with k=2.
 EDASeq::plotRLE(norm.dat.k2$set)
 ```
 
-### RUVg (k=3)
+#### RUVg (k=3)
 
 These are RUVSeq normalized with k=3. 
 ```{r, vis_RUV_RLE_3}
 ## K=3
 EDASeq::plotRLE(norm.dat.k3$set)
 ```
+### {-}
+
+### PCA analysis {.tabset}
+
+Here were look at the PCA plots for the raw (non-normalized), and RUVg normalized data with k=1,2,or3
+
+### PCA raw 
+
+Here, there is a huge batch effect.  
+```{r, pca_plots}
+## Raw data
+# making variance stabilized raw counts for later PCA plotting 
+dds_raw_counts <- DESeqDataSetFromMatrix(as.matrix(raw),colData=pData,design=~status_ov)
+vst_raw_counts <- DESeq2::varianceStabilizingTransformation(dds_raw_counts)
+pcaExplorer::pcaplot(vst_raw_counts, intgroup = "batch", ellipse = FALSE, text_labels = FALSE)
+pcaExplorer::pcaplot(vst_raw_counts, intgroup = "status_ov", ellipse = FALSE, text_labels = FALSE)
+pcaExplorer::pcaplot(vst_raw_counts, intgroup = "status_ob", ellipse = FALSE, text_labels = FALSE)
 
 
+
+
+```
+
+
+### PCA RUV (k=1)
+
+Removing one batch variable with RUVg lessens the batch effect somewhat.
+```{r, pca2}
+## RUVg norm, k=1
+pcaExplorer::pcaplot(norm.dat.k1$vsd, intgroup = "batch", ellipse = FALSE, text_labels = FALSE)
+pcaExplorer::pcaplot(norm.dat.k1$vsd, intgroup = "status_ov", ellipse = FALSE, text_labels = FALSE)
+pcaExplorer::pcaplot(norm.dat.k1$vsd, intgroup = "status_ob", ellipse = FALSE, text_labels = FALSE)
+```
+
+### PCA RUV (k=2)
+
+Removing two batch effects (variables) creates a more reasonable looking PCA plot.  Unfortunately, obese and non-obese do not cluster (this doesn't mean that we won't find some DE miRNAs)  
+```{r,pca3}
+## RUVg norm, k=2
+pcaExplorer::pcaplot(norm.dat.k2$vsd, intgroup = "batch", ellipse = FALSE, text_labels = FALSE)
+pcaExplorer::pcaplot(norm.dat.k2$vsd, intgroup = "status_ov", ellipse = FALSE, text_labels = FALSE)
+pcaExplorer::pcaplot(norm.dat.k2$vsd, intgroup = "status_ob", ellipse = FALSE, text_labels = FALSE)
+```
+
+
+### PCA RUV (k=3)
+
+Removing 3 batch variables may be overkill.  We want to be careful not to overfit the data or remove biological effects.  
+```{r,pca4}
+## RUVg norm, k=3
+pcaExplorer::pcaplot(norm.dat.k3$vsd, intgroup = "batch", ellipse = FALSE, text_labels = FALSE)
+pcaExplorer::pcaplot(norm.dat.k3$vsd, intgroup = "status_ov", ellipse = FALSE, text_labels = FALSE)
+```
+
+### {-}
 
 # DESeq2 DE analysis 
 
 ## Create DESEQ2 object 
+Let's test the DE analysis on these data using RUV normalized data (k=2)
+ 
+```{r, DESeq2, class.source = 'fold-show'}
+dds <- DESeqDataSetFromMatrix(countData = counts(norm.dat.k2$set[26:828,]),
+                              colData = pData(norm.dat.k2$set),
+                              design = ~ W_1 + W_2 + status_ov)  #since we largely normalized out our technical batches, we will not include it explicitly in the design formula
+dds <- DESeq(dds)
 
-## Create model 
+```
+
 
 ## Analyze DE changes
 
-## Visualize DE miRNAs
+### Overweight vs Lean 
+```{r, res1}
+res_OV <- as.data.frame(results(dds,contrast = c('status_ov','Over_Obese','Lean')))
+```
+
+
+### DEG table 
+```{r, table1}
+## Table of top DE genes 
+res_OV_sig <- res_OV %>% 
+  arrange(padj) %>% 
+  filter(padj < 0.1) %>% 
+  dplyr::select(c(padj, baseMean, log2FoldChange)) %>% 
+  mutate(across(c(1:3), ~round(.x, digits=3)))
+  
+  
+res_OV_sig
+```
+
+
+
+
+```{r, counts1, class.source = 'fold-show'}
+## Count plots of individual top DE genes 
+plotCounts(dds, "hsa-miR-642a-3p|0", intgroup = "status_ov")
+plotCounts(dds, "hsa-miR-630|0", intgroup = "status_ov")
+plotCounts(dds, "hsa-miR-575|0", intgroup = "status_ov")
+plotCounts(dds, "hsa-miR-223-3p|0", intgroup = "status_ov")
+
+```
+
+```{r, volPlot}
+df <- res_OV %>% mutate(gene_name = rownames(.)) %>% filter(padj < 0.1) 
+p <- do_vol_plot(df = df, sig = 0.05, fc = 0.3, size = 4)
+p <- p + ggtitle("Overweight vs Lean Volcano plot")
+p
+```
+
+## Create DESEQ2 object 
+Let's test again looking at just obese vs lean: 
+ 
+```{r, DESeq2_OB, class.source = 'fold-show'}
+
+dat <- norm.dat.k2$set
+dat_ob <- dat[,dat$status_ob %in% c("Lean","Obese")]
+dds_ob <- DESeqDataSetFromMatrix(countData = counts(dat_ob[26:828,]),
+                              colData = pData(dat_ob),
+                              design = ~ W_1 + W_2 + status_ob)  #since we largely normalized out our technical batches, we will not include it explicitly in the design formula
+dds_ob <- DESeq(dds_ob)
+
+```
+
+## Analyze DE changes
+
+### Obese vs Lean 
+```{r, res2}
+res_OB <- as.data.frame(results(dds_ob,contrast = c('status_ob','Obese','Lean')))
+```
+
+
+### DEG table 
+```{r, table2}
+## Table of top DE genes 
+res_OB_sig <- res_OB %>% 
+  arrange(padj) %>% 
+  filter(padj < 0.1) %>% 
+  dplyr::select(c(padj, baseMean, log2FoldChange)) %>% 
+  mutate(across(c(1:3), ~round(.x, digits=3))) 
+
+res_OB_sig
+
+
+```
+
+```{r, countplots}
+df <- plotCounts(dds_ob, gene = "hsa-miR-30c-5p|0", intgroup = "status_ob", returnData = TRUE)
+ggboxplot(df, x = "status_ob", y="count", fill = "status_ob") + ggtitle("Counts of hsa-miR-30c-5p|0 in Lean vs Obese samples")
+```
+
+```{r, volPlot2}
+df <- res_OB %>% mutate(gene_name = rownames(.)) %>% filter(padj < 0.1) 
+p <- do_vol_plot(df = df, sig = 0.05, fc = 0.3, size = 4)
+p <- p + ggtitle("Obese vs Lean Volcano plot")
+p
+```
+
+### Venn overlap of overweight vs obese miRNAs
+
+Here we are comparing miRNAs found as DE between overweight (+obese) vs lean, and just obese (excluding overweight) vs lean. 
+
+The "obese" set contains all but 2 miRNAs found in the "overweight" set and also contains 22 other miRNAs.  
+
+```{r, VENN}
+library(Vennerable)
+v <- Vennerable::Venn(list(obese = rownames(res_OB_sig), overweight = rownames(res_OV_sig)))
+plot(v, doWeights = TRUE)
+```
 
 # Conclusions
 
+
 # Computational Environment 
 
-## Session Info 
+```{r, sesh}
+sessionInfo()
+```
 
