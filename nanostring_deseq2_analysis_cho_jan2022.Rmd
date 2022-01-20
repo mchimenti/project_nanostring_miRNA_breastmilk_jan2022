@@ -24,8 +24,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 **Our central hypothesis is that altered breast milk EV (bEV)-miRNA profiles in obese mothers affect the gene expression of intestinal epithelial cells (IECs), which might be associated with unfavorable health outcomes in children. Our long-term goal is to promote the health and development of children by improving the quality of breast milk through interventions and therapeutic strategies. The objectives of this study to achieve the long-term goal are 1) to understand the physiological roles of bEVs associated with maternal obesity, and 2) to establish a research team investigating bEVs with collaborators for the further studies. To attain the overall objectives, we propose the following specific aims:
 
-Aim1. To determine differentially expressed bEV-miRNAs in obese mothers; We will recruit normal weight mothers and overweight/obese mothers and who have delivered a baby in the past one month. EV-miRNA expression profile will be analyzed with Nanostring Human miRNA Expression Panel. It will allow us to screen 798 biologically relevant miRNAs, which will enable us to find novel biomarkers related to maternal obesity. Our working hypothesis is that immune-response and metabolism-related miRNAs are altered in overweight/obese mother breast milk.
-**
+Aim1. To determine differentially expressed bEV-miRNAs in obese mothers; We will recruit normal weight mothers and overweight/obese mothers and who have delivered a baby in the past one month. EV-miRNA expression profile will be analyzed with Nanostring Human miRNA Expression Panel. It will allow us to screen 798 biologically relevant miRNAs, which will enable us to find novel biomarkers related to maternal obesity. Our working hypothesis is that immune-response and metabolism-related miRNAs are altered in overweight/obese mother breast milk.**
 
 ## Methods 
 
@@ -280,21 +279,22 @@ p2 <- ggboxplot(meta_df, x = "batch", y = "curr_BMI",
  
 p2
 
+## Overweight >= 25.  Obese >=30.
 meta_df <- meta_df %>% dplyr::mutate(
   status_ov = dplyr::case_when(
-    .data$prepreg_BMI < 24.25 ~ "Lean",
-    .data$prepreg_BMI >=24.25 ~ "Over_Obese",
+    .data$prepreg_BMI < 25 ~ "Lean",
+    .data$prepreg_BMI >=25 ~ "Over_Obese",
     TRUE ~ NA_character_
     )
 ) %>% dplyr::mutate(
   status_ob = dplyr::case_when(
-    .data$prepreg_BMI < 24.25 ~ "Lean",
-    .data$prepreg_BMI > 30 ~ "Obese",
-    (.data$prepreg_BMI >= 24.25 & .data$prepreg_BMI <= 30) ~ "Overweight"
+    .data$prepreg_BMI < 25 ~ "Lean",
+    .data$prepreg_BMI >= 30 ~ "Obese",
+    (.data$prepreg_BMI >= 25 & .data$prepreg_BMI < 30) ~ "Overweight"
     )
 )  
 
-p3 <- ggplot(meta_df, aes(y=batch, fill=status_ov)) + geom_bar(position="fill") + ggtitle("Fraction Overweight by Batch; BMI > 24.25")
+p3 <- ggplot(meta_df, aes(y=batch, fill=status_ov)) + geom_bar(position="fill") + ggtitle("Fraction Overweight by Batch; BMI > 25")
 p3
 
 p4 <- ggplot(meta_df, aes(y=batch, fill=status_ob)) + geom_bar(position="fill") + ggtitle("Fraction Obese by Batch; BMI > 30")
@@ -438,7 +438,7 @@ head(pData)
 
 No QC flags are set on any of the 80 samples: 
 ```{r, checkQCflags}
-pData[,7:10]
+pData[,8:11]
 ```
 
 This hidden code block does more setup and preparation for analysis.  
@@ -516,7 +516,9 @@ norm.dat.k3 <- NanoNormIter::RUV_total(raw,pData,fData,k = 3)
 
 ### RLE analysis {.tabset}
 
-Here, we visualize the raw and RUV normalized (k=1,2, or 3; k is the number of sources of suspected technical confounding) datasets using an RLE plot.  An RLE plot shows the boxplots of the log-ratios of the gene-level read counts of each sample to those of a reference sample (defined as the median across the samples). Ideally, the distributions should be centered around the zero line and as tight as possible. Clear deviations indicate the need for normalization and/or the presence of outlying samples.
+Here, we visualize the raw and RUV normalized (k=1,2, or 3; k is the number of sources of suspected technical confounding) datasets using an RLE plot.An RLE plot shows the boxplots of the log-ratios of the gene-level read counts of each sample to those of a reference sample (defined as the median across the samples). Ideally, the distributions should be centered around the zero line and as tight as possible. Clear deviations indicate the need for normalization and/or the presence of outlying samples.
+
+The RUVg function returns two pieces of information: the estimated factors of unwanted variation (added as columns to the phenoData slot of set) and the normalized counts obtained by regressing the original counts on the unwanted factors. The normalized values are stored in the normalizedCounts slot of set and can be accessed with the normCounts method. These counts should be used only for exploration. It is important that subsequent DE analysis be done on the original counts (accessible through the counts method), as removing the unwanted factors from the counts can also remove part of a factor of interest [6].
 
 #### Raw Data 
 
@@ -558,15 +560,15 @@ EDASeq::plotRLE(norm.dat.k3$set)
 
 Here were look at the PCA plots for the raw (non-normalized), and RUVg normalized data with k=1,2,or3
 
-### PCA raw 
+#### PCA raw 
 
-Here, there is a huge batch effect.  
-```{r, pca_plots}
+Here, there is a huge batch effect, with Batch 4 distinct from 1-3 and 5-9. We see this also in the number of below limit of detection miRNAs (above), and in the individual count plots as well.  
+```{r, pca_plots, dpi=300, fig.width=9}
 ## Raw data
 # making variance stabilized raw counts for later PCA plotting 
 dds_raw_counts <- DESeqDataSetFromMatrix(as.matrix(raw),colData=pData,design=~status_ov)
 vst_raw_counts <- DESeq2::varianceStabilizingTransformation(dds_raw_counts)
-pcaExplorer::pcaplot(vst_raw_counts, intgroup = "batch", ellipse = FALSE, text_labels = FALSE)
+pcaExplorer::pcaplot(vst_raw_counts, intgroup = "batch", ellipse = FALSE, text_labels = TRUE)
 pcaExplorer::pcaplot(vst_raw_counts, intgroup = "status_ov", ellipse = FALSE, text_labels = FALSE)
 pcaExplorer::pcaplot(vst_raw_counts, intgroup = "status_ob", ellipse = FALSE, text_labels = FALSE)
 
@@ -576,7 +578,7 @@ pcaExplorer::pcaplot(vst_raw_counts, intgroup = "status_ob", ellipse = FALSE, te
 ```
 
 
-### PCA RUV (k=1)
+#### PCA RUV (k=1)
 
 Removing one batch variable with RUVg lessens the batch effect somewhat.
 ```{r, pca2}
@@ -586,7 +588,7 @@ pcaExplorer::pcaplot(norm.dat.k1$vsd, intgroup = "status_ov", ellipse = FALSE, t
 pcaExplorer::pcaplot(norm.dat.k1$vsd, intgroup = "status_ob", ellipse = FALSE, text_labels = FALSE)
 ```
 
-### PCA RUV (k=2)
+#### PCA RUV (k=2)
 
 Removing two batch effects (variables) creates a more reasonable looking PCA plot.  Unfortunately, obese and non-obese do not cluster (this doesn't mean that we won't find some DE miRNAs)  
 ```{r,pca3}
@@ -597,7 +599,7 @@ pcaExplorer::pcaplot(norm.dat.k2$vsd, intgroup = "status_ob", ellipse = FALSE, t
 ```
 
 
-### PCA RUV (k=3)
+#### PCA RUV (k=3)
 
 Removing 3 batch variables may be overkill.  We want to be careful not to overfit the data or remove biological effects.  
 ```{r,pca4}
@@ -610,13 +612,19 @@ pcaExplorer::pcaplot(norm.dat.k3$vsd, intgroup = "status_ov", ellipse = FALSE, t
 
 # DESeq2 DE analysis 
 
-## Create DESEQ2 object 
+## Create DESEQ2 object (Overweight)
 Let's test the DE analysis on these data using RUV normalized data (k=2)
  
 ```{r, DESeq2, class.source = 'fold-show'}
 dds <- DESeqDataSetFromMatrix(countData = counts(norm.dat.k2$set[26:828,]),
                               colData = pData(norm.dat.k2$set),
-                              design = ~ W_1 + W_2 + status_ov)  #since we largely normalized out our technical batches, we will not include it explicitly in the design formula
+                              design = ~ W_1 + W_2 + status_ov)  
+
+
+
+#####
+####W   _1 and W_2 basically represent the technical batches in the data.  The counts used here for DESeq2 are raw counts, not normalized.  So we use #####  RUVg to learn factors of "unwanted variation" and then account for those in the linear model, rather than use the post-normalization counts. 
+#####
 dds <- DESeq(dds)
 
 ```
@@ -625,12 +633,20 @@ dds <- DESeq(dds)
 ## Analyze DE changes
 
 ### Overweight vs Lean 
+
+We are comparing samples with prepreg BMI < 25 (lean) and BMI >=25 (Overweight and Obese).
+
+There samples break down as follows: 
+Lean           Obese          Overweight 
+        47         18         15 
 ```{r, res1}
 res_OV <- as.data.frame(results(dds,contrast = c('status_ov','Over_Obese','Lean')))
 ```
 
 
 ### DEG table 
+
+There are 8 miRNAs with adjusted p < 0.1. 
 ```{r, table1}
 ## Table of top DE genes 
 res_OV_sig <- res_OV %>% 
@@ -644,14 +660,64 @@ res_OV_sig
 ```
 
 
-
+As we can see from the count plots, a few high count outliers are driving a lot of the difference, although it appears the group means would probably still be different without the outliers.  
 
 ```{r, counts1, class.source = 'fold-show'}
 ## Count plots of individual top DE genes 
-plotCounts(dds, "hsa-miR-642a-3p|0", intgroup = "status_ov")
-plotCounts(dds, "hsa-miR-630|0", intgroup = "status_ov")
-plotCounts(dds, "hsa-miR-575|0", intgroup = "status_ov")
-plotCounts(dds, "hsa-miR-223-3p|0", intgroup = "status_ov")
+
+
+df <- plotCounts(dds, gene = "hsa-miR-630|0", intgroup = "status_ov", returnData = TRUE)
+p <- ggboxplot(df, 
+               x='status_ov', 
+               y='count', 
+               fill = "status_ov",
+               add = "jitter", 
+               label = rownames(df), 
+               label.select = list(criteria = "`y` > 1300"),
+               repel = TRUE) 
+
+p <- p + ggtitle("hsa-miR-630|0 Counts by Status")
+p
+
+df <- plotCounts(dds, gene = "hsa-miR-642a-3p|0", intgroup = "status_ov", returnData = TRUE)
+p <- ggboxplot(df, 
+               x='status_ov', 
+               y='count', 
+               fill = "status_ov",
+               add = "jitter", 
+               label = rownames(df), 
+               label.select = list(criteria = "`y` > 130"),
+               repel = TRUE) 
+
+p <- p + ggtitle("hsa-miR-642a-3p|0 Counts by Status")
+p
+
+
+df <- plotCounts(dds, gene = "hsa-miR-575|0", intgroup = "status_ov", returnData = TRUE)
+p <- ggboxplot(df, 
+               x='status_ov', 
+               y='count', 
+               fill = "status_ov",
+               add = "jitter", 
+               label = rownames(df), 
+               label.select = list(criteria = "`y` > 1300"),
+               repel = TRUE) 
+
+p <- p + ggtitle("hsa-miR-575|0 Counts by Status")
+p
+
+df <- plotCounts(dds, gene = "hsa-miR-223-3p|0", intgroup = "status_ov", returnData = TRUE)
+p <- ggboxplot(df, 
+               x='status_ov', 
+               y='count', 
+               fill = "status_ov",
+               add = "jitter", 
+               label = rownames(df), 
+               label.select = list(criteria = "`y` > 150"),
+               repel = TRUE) 
+
+p <- p + ggtitle("hsa-miR-223-3p|0 Counts by Status")
+p
 
 ```
 
@@ -662,8 +728,8 @@ p <- p + ggtitle("Overweight vs Lean Volcano plot")
 p
 ```
 
-## Create DESEQ2 object 
-Let's test again looking at just obese vs lean: 
+## Create DESEQ2 object (Obese)
+Let's test again looking at just obese vs lean (defined as > 30 BMI and < 24 BMI). In this way of subsetting the data, there are 40 lean, 18 obese, and 22 overweight samples.  Only the lean and obese are tested against each other in this analysis.  
  
 ```{r, DESeq2_OB, class.source = 'fold-show'}
 
@@ -699,8 +765,61 @@ res_OB_sig
 ```
 
 ```{r, countplots}
+df <- plotCounts(dds_ob, gene = "hsa-miR-575|0", intgroup = "status_ob", returnData = TRUE)
+p <- ggboxplot(df, 
+               x='status_ob', 
+               y='count', 
+               fill = "status_ob",
+               add = "jitter", 
+               label = rownames(df), 
+               label.select = list(criteria = "`y` > 150"),
+               repel = TRUE) 
+
+p <- p + ggtitle("hsa-miR-575|0 Counts by Status")
+p
+
+df <- plotCounts(dds_ob, gene = "hsa-miR-630|0", intgroup = "status_ob", returnData = TRUE)
+p <- ggboxplot(df, 
+               x='status_ob', 
+               y='count', 
+               fill = "status_ob",
+               add = "jitter", 
+               label = rownames(df), 
+               label.select = list(criteria = "`y` > 150"),
+               repel = TRUE) 
+
+p <- p + ggtitle("hsa-miR-630|0 Counts by Status")
+p
+
+
 df <- plotCounts(dds_ob, gene = "hsa-miR-30c-5p|0", intgroup = "status_ob", returnData = TRUE)
-ggboxplot(df, x = "status_ob", y="count", fill = "status_ob") + ggtitle("Counts of hsa-miR-30c-5p|0 in Lean vs Obese samples")
+p <- ggboxplot(df, 
+               x='status_ob', 
+               y='count', 
+               fill = "status_ob",
+               add = "jitter", 
+               label = rownames(df), 
+               label.select = list(criteria = "`y` > 150"),
+               repel = TRUE) 
+
+p <- p + ggtitle("hsa-miR-30c-5p|0 Counts by Status")
+p
+
+
+df <- plotCounts(dds_ob, gene = "hsa-miR-582-3p|0", intgroup = "status_ob", returnData = TRUE)
+p <- ggboxplot(df, 
+               x='status_ob', 
+               y='count', 
+               fill = "status_ob",
+               add = "jitter", 
+               label = rownames(df), 
+               label.select = list(criteria = "`y` > 50"),
+               repel = TRUE) 
+
+p <- p + ggtitle("hsa-miR-582-3p|0 Counts by Status")
+p
+
+
 ```
 
 ```{r, volPlot2}
@@ -722,7 +841,69 @@ v <- Vennerable::Venn(list(obese = rownames(res_OB_sig), overweight = rownames(r
 plot(v, doWeights = TRUE)
 ```
 
+
+## Create DESEQ2 object (Milk col date)
+
+Let's test the DE analysis on these data using RUV normalization factors (k=2) and controlling for milk date as a continuous factor 
+ 
+```{r, DESeq2_OB, class.source = 'fold-show'}
+
+dat <- norm.dat.k2$set
+dat_ob <- dat[,dat$status_ob %in% c("Lean","Obese")]
+pData <- pData(dat_ob)
+pData_2 <- pData %>% as_tibble() %>% mutate(milk_col_factor = as.factor(ntile(milk_col_dt, 4))) #Quartile bins of collection date
+
+dds_ob <- DESeqDataSetFromMatrix(countData = counts(dat_ob[26:828,]),
+                              colData = pData_2,
+                              design = ~ W_1 + W_2 + milk_col_factor + status_ob)  #since we largely normalized out our technical batches, we will not include it explicitly in the design formula
+dds_ob <- DESeq(dds_ob)
+
+```
+
+
+## Analyze DE accounting for milk collection date
+
+### Obese vs Lean 
+
+We are comparing samples with prepreg BMI < 25 (lean) and BMI > 30 (Obese).   
+```{r, res1}
+
+res_OB_MCF <- as.data.frame(results(dds_ob,contrast = c('status_ob','Obese','Lean')))
+```
+
+
+### DEG table 
+
+```{r, table1}
+## Table of top DE genes 
+res_OB_MCF_sig <- res_OB_MCF %>% 
+  arrange(padj) %>% 
+  filter(padj < 0.1) %>% 
+  dplyr::select(c(padj, baseMean, log2FoldChange)) %>% 
+  mutate(across(c(1:3), ~round(.x, digits=3)))
+  
+  
+res_OB_MCF_sig
+```
+
+```{r, VENN2}
+v <- Vennerable::Venn(list(obese = rownames(res_OB_sig), obese_MCF = rownames(res_OB_MCF_sig)))
+plot(v, doWeights = TRUE)
+```
+## Analyze DE by collection time
+
+Controlled for BMI, contrast on collection time.  Two groups at > or < 40 days.  LRT model for time-dependent miRNAs. 
+
 # Conclusions
+
+In this analysis, we aim to determine differentially expressed bEV-miRNAs in obese mothers;  EV-miRNA expression was profiled with Nanostring Human NanoString miRNA Expression Panel of 798 biologically relevant miRNAs. Our working hypothesis is that immune-response and metabolism-related miRNAs are altered in overweight/obese mother breast milk.
+
+After correcting for sample batch using the "RUVg" method of Love, et. al., we found 8 miRNAs that were DE (p-adj < 0.1) between overweight/obese and lean samples.  We also found 28 miRNAs that were DE (p-adj < 0.1) between obese and lean samples.  75% of the overweight DE miRNAs were also captured in the obese comparison, despite having fewer samples in the analysis.  
+
+Many of the most DE miRNAs have significant outlier samples that may be biasing the results.  We may wish to drop one or more samples, or possibly the most outlier batch (probably batch 4) and re-evaluate.  
+
+
+
 
 
 # Computational Environment 
