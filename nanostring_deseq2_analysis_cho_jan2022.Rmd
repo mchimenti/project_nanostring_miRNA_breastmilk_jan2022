@@ -844,18 +844,18 @@ plot(v, doWeights = TRUE)
 
 ## Create DESEQ2 object (Milk col date)
 
-Let's test the DE analysis on these data using RUV normalization factors (k=2) and controlling for milk date as a continuous factor 
+Let's test the DE analysis on these data using RUV normalization factors (k=2) and controlling for milk date as a factor.  What I'm doing here is using quartiles to place the milk collection dates into four equal groups and incorporating that into the model.  
  
 ```{r, DESeq2_OB, class.source = 'fold-show'}
 
 dat <- norm.dat.k2$set
 dat_ob <- dat[,dat$status_ob %in% c("Lean","Obese")]
-pData <- pData(dat_ob)
-pData_2 <- pData %>% as_tibble() %>% mutate(milk_col_factor = as.factor(ntile(milk_col_dt, 4))) #Quartile bins of collection date
+pData_2 <- pData(dat_ob)
+pData_2 <- pData_2 %>% as_tibble() %>% mutate(milk_col_factor = as.factor(ntile(milk_col_dt, 4))) #Quartile bins of collection date
 
 dds_ob <- DESeqDataSetFromMatrix(countData = counts(dat_ob[26:828,]),
                               colData = pData_2,
-                              design = ~ W_1 + W_2 + milk_col_factor + status_ob)  #since we largely normalized out our technical batches, we will not include it explicitly in the design formula
+                              design = ~ W_1 + W_2 + milk_col_factor + status_ob)  
 dds_ob <- DESeq(dds_ob)
 
 ```
@@ -890,15 +890,92 @@ res_OB_MCF_sig
 v <- Vennerable::Venn(list(obese = rownames(res_OB_sig), obese_MCF = rownames(res_OB_MCF_sig)))
 plot(v, doWeights = TRUE)
 ```
+
+There are only 4 new DE miRNAs detected by accounting for milk collection date.  Those are: 
+
+"hsa-miR-137|0"     "hsa-miR-381-3p|0"  "hsa-miR-3195|0"    "hsa-miR-3928-3p|0"
+
+
 ## Analyze DE by collection time
 
-Controlled for BMI, contrast on collection time.  Two groups at > or < 40 days.  LRT model for time-dependent miRNAs. 
+Controlled for BMI, contrast on collection time.  LRT model for time-dependent miRNAs. 
+
+In this analysis, I am using the Likelihood Ratio Test to test a model fit to `W_1 + W_2 + milk_col_dt + status_ov` vs a reduced model with just `W_1 + W_2 + status_ov`.   miRNAs that are DE here are those that are better fit by accounting for milk collection date, all other factors being equal. I am using overweight/obese vs lean as a factor for BMI status in this analysis.  
+
+I am also testing the LRT again using milk collection factor (a discrete factor instead of continuous integer value) . 
+ 
+```{r, DESeq2_LRT, class.source = 'fold-show'}
+
+#### Milk collection date (continuous)
+dat <- norm.dat.k2$set
+dds <- DESeqDataSetFromMatrix(countData = counts(dat[26:828,]),
+                              colData = pData(dat),
+                              design = ~ W_1 + W_2 + milk_col_dt + status_ov)  #since we largely normalized out our technical batches, we will not include it explicitly in the design formula
+dds <- DESeq(dds, test = "LRT", reduced = ~ W_1 + W_2 + status_ov)
+res_col_dt_LRT <- results(dds) %>% as.data.frame() %>% filter(padj < 0.05) %>% arrange(padj)
+
+#### Milk collection factor (discrete quartiles)
+dat <- norm.dat.k2$set
+pData_2 <- pData(dat) %>% as_tibble() %>% mutate(milk_col_factor = as.factor(ntile(milk_col_dt, 4))) #Quartile bins of collection date
+
+dds <- DESeqDataSetFromMatrix(countData = counts(dat[26:828,]),
+                              colData = pData_2,
+                              design = ~ W_1 + W_2 + milk_col_factor + status_ov)  #s
+
+dds <- DESeq(dds, test = "LRT", reduced = ~ W_1 + W_2 + status_ov)
+res_col_fac_LRT <- results(dds) %>% as.data.frame() %>% filter(padj < 0.05) %>% arrange(padj)
+
+v <- Vennerable::Venn(list(milk_col_day = rownames(res_col_dt_LRT), milk_col_quartiles = rownames(res_col_fac_LRT)))
+plot(v, doWeights = TRUE)
+
+```
+
+## 
+```{r, plot_counts_by_time}
+
+### dds here is the Deseq2 object calculated on milk_col_factor using the LRT
+df <- plotCounts(dds, gene = "hsa-miR-579-3p|0.128", intgroup = c("milk_col_factor", "status_ov"), returnData = TRUE)
+p <- ggboxplot(df, 
+               x='milk_col_factor', 
+               y='count', 
+               color = "status_ov",
+               add = "jitter")
+               #label = rownames(df), 
+               #label.select = list(criteria = "`y` > 50"),
+               #repel = TRUE) 
+
+p <- p + ggtitle(" Counts by Status and Milk Col. Date Quartile")
+p
+
+df <- plotCounts(dds, gene = "hsa-miR-502-5p|0.005", intgroup = c("milk_col_factor", "status_ov", "batch"), returnData = TRUE)
+p <- ggboxplot(df, 
+               x='milk_col_factor', 
+               y='count', 
+               color = "batch",
+               add = "jitter")
+               #label = rownames(df), 
+               #label.select = list(criteria = "`y` > 50"),
+               #repel = TRUE) 
+
+#p <- p + ggtitle(" Counts by Status and Milk Col. Date Quartile")
+p
+
+```
+Milk collection factor here are 4 equal quartile "bins" of the collection dates: 
+
+```{r}
+milk_df <- data.frame(col_date = pData$milk_col_dt, col_factor = ntile(pData$milk_col_dt, 4))
+milk_df
+```
+
+
+## DE analysis subsetting by batch 
 
 # Conclusions
 
 In this analysis, we aim to determine differentially expressed bEV-miRNAs in obese mothers;  EV-miRNA expression was profiled with Nanostring Human NanoString miRNA Expression Panel of 798 biologically relevant miRNAs. Our working hypothesis is that immune-response and metabolism-related miRNAs are altered in overweight/obese mother breast milk.
 
-After correcting for sample batch using the "RUVg" method of Love, et. al., we found 8 miRNAs that were DE (p-adj < 0.1) between overweight/obese and lean samples.  We also found 28 miRNAs that were DE (p-adj < 0.1) between obese and lean samples.  75% of the overweight DE miRNAs were also captured in the obese comparison, despite having fewer samples in the analysis.  
+After correcting for sample batch using the "RUVg" method of Love, et. al., we found X miRNAs that were DE (p-adj < 0.1) between overweight/obese and lean samples.  We also found Y miRNAs that were DE (p-adj < 0.1) between obese and lean samples.  75% of the overweight DE miRNAs were also captured in the obese comparison, despite having fewer samples in the analysis.  
 
 Many of the most DE miRNAs have significant outlier samples that may be biasing the results.  We may wish to drop one or more samples, or possibly the most outlier batch (probably batch 4) and re-evaluate.  
 
