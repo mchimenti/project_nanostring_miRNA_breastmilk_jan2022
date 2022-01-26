@@ -646,7 +646,7 @@ res_OV <- as.data.frame(results(dds,contrast = c('status_ov','Over_Obese','Lean'
 
 ### DEG table 
 
-There are 8 miRNAs with adjusted p < 0.1. 
+There are `r dim(res_OV_sig)[1]` miRNAs with adjusted p < 0.1. 
 ```{r, table1}
 ## Table of top DE genes 
 res_OV_sig <- res_OV %>% 
@@ -660,7 +660,7 @@ res_OV_sig
 ```
 
 
-As we can see from the count plots, a few high count outliers are driving a lot of the difference, although it appears the group means would probably still be different without the outliers.  
+As we can see from the count plots below, a few high count outliers are driving a lot of the difference, although it appears the group means would probably still be different without the outliers.  
 
 ```{r, counts1, class.source = 'fold-show'}
 ## Count plots of individual top DE genes 
@@ -729,7 +729,11 @@ p
 ```
 
 ## Create DESEQ2 object (Obese)
-Let's test again looking at just obese vs lean (defined as > 30 BMI and < 24 BMI). In this way of subsetting the data, there are 40 lean, 18 obese, and 22 overweight samples.  Only the lean and obese are tested against each other in this analysis.  
+Let's test again looking at just obese vs lean (defined as > 30 BMI and < 25 BMI). In this way of subsetting the data, there are:
+
+`r table(dat$status_ob)`
+
+Only the lean and obese are tested against each other in this analysis.  
  
 ```{r, DESeq2_OB, class.source = 'fold-show'}
 
@@ -846,7 +850,7 @@ plot(v, doWeights = TRUE)
 
 Let's test the DE analysis on these data using RUV normalization factors (k=2) and controlling for milk date as a factor.  What I'm doing here is using quartiles to place the milk collection dates into four equal groups and incorporating that into the model.  
  
-```{r, DESeq2_OB, class.source = 'fold-show'}
+```{r, DESeq2_OB2, class.source = 'fold-show'}
 
 dat <- norm.dat.k2$set
 dat_ob <- dat[,dat$status_ob %in% c("Lean","Obese")]
@@ -866,7 +870,7 @@ dds_ob <- DESeq(dds_ob)
 ### Obese vs Lean 
 
 We are comparing samples with prepreg BMI < 25 (lean) and BMI > 30 (Obese).   
-```{r, res1}
+```{r}
 
 res_OB_MCF <- as.data.frame(results(dds_ob,contrast = c('status_ob','Obese','Lean')))
 ```
@@ -874,7 +878,7 @@ res_OB_MCF <- as.data.frame(results(dds_ob,contrast = c('status_ob','Obese','Lea
 
 ### DEG table 
 
-```{r, table1}
+```{r}
 ## Table of top DE genes 
 res_OB_MCF_sig <- res_OB_MCF %>% 
   arrange(padj) %>% 
