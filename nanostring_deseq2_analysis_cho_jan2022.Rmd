@@ -646,7 +646,7 @@ res_OV <- as.data.frame(results(dds,contrast = c('status_ov','Over_Obese','Lean'
 
 ### DEG table 
 
-There are `r dim(res_OV_sig)[1]` miRNAs with adjusted p < 0.1. 
+
 ```{r, table1}
 ## Table of top DE genes 
 res_OV_sig <- res_OV %>% 
@@ -658,7 +658,7 @@ res_OV_sig <- res_OV %>%
   
 res_OV_sig
 ```
-
+There are `r dim(res_OV_sig)[1]` miRNAs with adjusted p < 0.1. 
 
 As we can see from the count plots below, a few high count outliers are driving a lot of the difference, although it appears the group means would probably still be different without the outliers.  
 
@@ -729,9 +729,9 @@ p
 ```
 
 ## Create DESEQ2 object (Obese)
-Let's test again looking at just obese vs lean (defined as > 30 BMI and < 25 BMI). In this way of subsetting the data, there are:
+Let's test again looking at just obese vs lean (defined as > 30 BMI and < 25 BMI). 
 
-`r table(dat$status_ob)`
+
 
 Only the lean and obese are tested against each other in this analysis.  
  
@@ -745,6 +745,8 @@ dds_ob <- DESeqDataSetFromMatrix(countData = counts(dat_ob[26:828,]),
 dds_ob <- DESeq(dds_ob)
 
 ```
+In this way of subsetting the data, there are: `r table(dat$status_ob)`
+
 
 ## Analyze DE changes
 
@@ -756,7 +758,7 @@ res_OB <- as.data.frame(results(dds_ob,contrast = c('status_ob','Obese','Lean'))
 
 ### DEG table 
 
-There are `r dim(res_OB_sig)[1]` DE miRNAs in this analysis at p_adj < 0.1.  
+
 
 ```{r, table2}
 ## Table of top DE genes 
@@ -770,6 +772,8 @@ res_OB_sig
 
 
 ```
+
+There are `r dim(res_OB_sig)[1]` DE miRNAs in this analysis at p_adj < 0.1.  
 
 ```{r, countplots}
 df <- plotCounts(dds_ob, gene = "hsa-miR-575|0", intgroup = "status_ob", returnData = TRUE)
@@ -1004,6 +1008,8 @@ From our exploratory analysis, it seems that batches 5-9 are the most homogenous
 
 While I tried interrogating just batches 5-9 for DE miRNA, unfortunately there were no results.  This may be owing to a reduction in power or for some other reason.  I am not sure.  
 
+So here we will just drop batch 4 (4-1 and 4-2) altogether. 
+
 
 
 ```{r, batch_subset, class.source = 'fold-show'}
@@ -1055,11 +1061,15 @@ v@IntersectionSets$`11`
 
 # Conclusions
 
-In this analysis, we aim to determine differentially expressed bEV-miRNAs in obese mothers;  EV-miRNA expression was profiled with Nanostring Human NanoString miRNA Expression Panel of 798 biologically relevant miRNAs. Our working hypothesis is that immune-response and metabolism-related miRNAs are altered in overweight/obese mother breast milk.
+**In this analysis, we aim to determine differentially expressed bEV-miRNAs in obese mothers;  EV-miRNA expression was profiled with Nanostring Human NanoString miRNA Expression Panel of 798 biologically relevant miRNAs. Our working hypothesis is that immune-response and metabolism-related miRNAs are altered in overweight/obese mother breast milk.**
 
-After correcting for sample batch using the "RUVg" method of Love, et. al., we found X miRNAs that were DE (p-adj < 0.1) between overweight/obese and lean samples.  We also found Y miRNAs that were DE (p-adj < 0.1) between obese and lean samples.  75% of the overweight DE miRNAs were also captured in the obese comparison, despite having fewer samples in the analysis.  
+**After correcting for sample batch using the "RUVg" method of Love, et. al., we found `r dim(res_OV_sig)[1]` miRNAs that were DE (p-adj < 0.1) between overweight/obese and lean samples.  We also found `r dim(res_OB_sig)[1]` miRNAs that were DE (p-adj < 0.1) between obese and lean samples.  22 of the overweight DE miRNAs were also captured in the obese comparison, despite having fewer samples in the analysis.**  
 
-Many of the most DE miRNAs have significant outlier samples that may be biasing the results.  We may wish to drop one or more samples, or possibly the most outlier batch (probably batch 4) and re-evaluate.  
+*Many of the most DE miRNAs have significant outlier samples that may be biasing the results.  We may wish to drop one or more samples, or possibly the most outlier batch (probably batch 4) and re-evaluate. *
+
+*When dropping batch 4 from the analysis, we obtain fewer DE miRNAs.  There are still 8 that overlap the analysis for Obese vs Lean for the full dataset.  I would possibly consider prioritizing these 8 for follow up wet lab studies to validate. *
+
+*In future studies, we may wish to put more emphasis on controlling the technical factors in sample preparation for sequencing.  There appear to be large batch effects that are present and likely masking some of the biologically interesting signal.  Additionally, factors like "milk collection date" should be randomized across batches or standardized to one particular interval (i.e., 12 days).*
 
 
 # Computational Environment 
