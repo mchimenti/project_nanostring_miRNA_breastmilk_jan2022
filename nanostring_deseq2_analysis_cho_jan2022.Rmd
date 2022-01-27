@@ -28,7 +28,7 @@ Aim1. To determine differentially expressed bEV-miRNAs in obese mothers; We will
 
 ## Methods 
 
-Nanostring NCounter data were obtained as “RCC” format files. These were imported into R with 'readRcc' function from the NanoStringQCPro package (Bioconductor; https://www.bioconductor.org/packages/release/bioc/html/NanoStringQCPro.html; Bourgon et. al.).  Here, we follow the NanoString RUV normalization procedure outlined in Love, et. al (ref), for quality control checks and iterative RUVg normalization (Risso, et. al.).  All samples passed QC checks and were included in the analysis.  After visualization of the normalized data with RLE and PCA plots, RUVg-normalized data (k=2) was chosen for downstream DEG analysis.  A DESeq2 'dds' object was created from the normalized data using ‘DESeqDataSetFromMatrix’ with design conditioned on a grouped factor (genotype and FPI).  Pathway and GO term enrichment was carried out using ‘ClusterProfiler’ (ref).  R code for the analysis is available on Github.    
+Nanostring NCounter data were obtained as “RCC” format files. These were imported into R with 'readRcc' function from the NanoStringQCPro package (Bioconductor; https://www.bioconductor.org/packages/release/bioc/html/NanoStringQCPro.html; Bourgon et. al.).  Here, we follow the NanoString RUV normalization procedure outlined in Love, et. al (ref), for quality control checks and iterative RUVg normalization (Risso, et. al.).  All samples passed QC checks and were included in the analysis.  After visualization of the normalized data with RLE and PCA plots, RUVg-normalized data (k=2) was chosen for downstream DEG analysis.  A DESeq2 'dds' object was created from the normalized data using ‘DESeqDataSetFromMatrix’ with design conditioned on a BMI-cutoff factor variable, milk collection date quartile, and the RUVg-learned 'W1' and 'W2' correction factors for technical batch. R code for the analysis is available on Github.    
 
 Nickles D, Sandmann T, Ziman R, Bourgon R (2021). NanoStringQCPro: Quality metrics and data processing methods for NanoString mRNA gene expression data. R package version 1.26.0.
 
@@ -1065,11 +1065,11 @@ v@IntersectionSets$`11`
 
 **After correcting for sample batch using the "RUVg" method of Love, et. al., we found `r dim(res_OV_sig)[1]` miRNAs that were DE (p-adj < 0.1) between overweight/obese and lean samples.  We also found `r dim(res_OB_sig)[1]` miRNAs that were DE (p-adj < 0.1) between obese and lean samples.  22 of the overweight DE miRNAs were also captured in the obese comparison, despite having fewer samples in the analysis.**  
 
-*Many of the most DE miRNAs have significant outlier samples that may be biasing the results.  We may wish to drop one or more samples, or possibly the most outlier batch (probably batch 4) and re-evaluate. *
+**Many of the most DE miRNAs have significant outlier samples that may be biasing the results.  We may wish to drop one or more samples, or possibly the most outlier batch (probably batch 4) and re-evaluate. **
 
-*When dropping batch 4 from the analysis, we obtain fewer DE miRNAs.  There are still 8 that overlap the analysis for Obese vs Lean for the full dataset.  I would possibly consider prioritizing these 8 for follow up wet lab studies to validate. *
+**When dropping batch 4 from the analysis, we obtain fewer DE miRNAs.  There are still 8 that overlap the analysis for Obese vs Lean for the full dataset.  I would possibly consider prioritizing these 8 for follow up wet lab studies to validate. **
 
-*In future studies, we may wish to put more emphasis on controlling the technical factors in sample preparation for sequencing.  There appear to be large batch effects that are present and likely masking some of the biologically interesting signal.  Additionally, factors like "milk collection date" should be randomized across batches or standardized to one particular interval (i.e., 12 days).*
+**In future studies, we may wish to put more emphasis on controlling the technical factors in sample preparation for sequencing.  There appear to be large batch effects that are present and likely masking some of the biologically interesting signal.  Additionally, factors like "milk collection date" should be randomized across batches or standardized to one particular interval (i.e., 12 days).**
 
 
 # Computational Environment 
