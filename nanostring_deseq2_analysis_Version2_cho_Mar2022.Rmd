@@ -1,0 +1,531 @@
+---
+title: "NanoString NCounter analysis: Breastmilk miRNA Obese vs Normals UPDATED"
+author: "Michael S Chimenti"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    number_sections: true
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Introduction
+
+## Project Summary 
+
+This document contains the "final" two analyses that we decided on after back and forth discussion.
+
+**Our central hypothesis is that altered breast milk EV (bEV)-miRNA profiles in obese mothers affect the gene expression of intestinal epithelial cells (IECs), which might be associated with unfavorable health outcomes in children. Our long-term goal is to promote the health and development of children by improving the quality of breast milk through interventions and therapeutic strategies. The objectives of this study to achieve the long-term goal are 1) to understand the physiological roles of bEVs associated with maternal obesity, and 2) to establish a research team investigating bEVs with collaborators for the further studies. To attain the overall objectives, we propose the following specific aims:
+
+Aim1. To determine differentially expressed bEV-miRNAs in obese mothers; We will recruit normal weight mothers and overweight/obese mothers and who have delivered a baby in the past one month. EV-miRNA expression profile will be analyzed with Nanostring Human miRNA Expression Panel. It will allow us to screen 798 biologically relevant miRNAs, which will enable us to find novel biomarkers related to maternal obesity. Our working hypothesis is that immune-response and metabolism-related miRNAs are altered in overweight/obese mother breast milk.**
+
+## Methods 
+
+Nanostring NCounter data were obtained as “RCC” format files. These were imported into R with 'readRcc' function from the NanoStringQCPro package (Bioconductor; https://www.bioconductor.org/packages/release/bioc/html/NanoStringQCPro.html; Bourgon et. al.).  Here, we follow the NanoString RUV normalization procedure outlined in Love, et. al (ref), for quality control checks and iterative RUVg normalization (Risso, et. al.).  All samples passed QC checks and were included in the analysis.  After visualization of the normalized data with RLE and PCA plots, RUVg-normalized data (k=2) was chosen for downstream DEG analysis.  A DESeq2 'dds' object was created from the normalized data using ‘DESeqDataSetFromMatrix’ with design conditioned on a BMI-cutoff factor variable, milk collection date quartile, and the RUVg-learned 'W1' and 'W2' correction factors for technical batch. R code for the analysis is available on Github.    
+
+Nickles D, Sandmann T, Ziman R, Bourgon R (2021). NanoStringQCPro: Quality metrics and data processing methods for NanoString mRNA gene expression data. R package version 1.26.0.
+
+Bhattacharya A, Hamilton AM, Furberg H, et al. An approach for normalization and quality control for NanoString RNA expression data. Brief Bioinform. 2021;22(3):bbaa163. doi:10.1093/bib/bbaa163
+
+Risso D, Ngai J, Speed T, Dudoit S (2014). “Normalization of RNA-seq data using factor analysis of control genes or samples.” Nature Biotechnology, 32(9), 896–902. In press, http://www.nature.com/nbt/journal/v32/n9/full/nbt.2931.html.
+
+Love MI, Huber W, Anders S (2014). “Moderated estimation of fold change and dispersion for RNA-seq data with DESeq2.” Genome Biology, 15, 550. doi: 10.1186/s13059-014-0550-8.
+
+## Library imports 
+Click the "Code" button to see hidden code.  
+```{r, imports, warning=FALSE, message=FALSE}
+
+## Format and plotting 
+library(ggrepel)
+library(kableExtra)
+library(pcaExplorer)
+library(Vennerable)
+require(ggplot2)
+
+## Nanostring specific 
+library(RUVSeq)
+library(NanoStringQCPro)
+library(NanoNormIter)
+
+
+## DE analysis 
+library(DESeq2)
+library(limma)
+library(matrixStats)
+library(EnvStats)
+
+## TidyR
+library(tidyverse)
+library(magrittr)
+
+```
+
+## Function definitions 
+
+```{r, function_defs}
+## Volcano Plot
+
+do_vol_plot <- function(df, sig=0.05, fc=0.5, size = 4){
+  
+  df_sig<- df %>% filter(padj < sig)
+  
+  ## genes with labels -- signficant,decreased expression and start with IGF
+  
+  df_label<- df %>% 
+              filter(padj < sig, abs(log2FoldChange) > fc)
+              #mutate(short_id = stringr::str_split(gene_id, "000000") %>% map_chr(.,2))
+  
+  
+  ## plot
+  
+  p <- ggplot(df, aes(log2FoldChange, -log10(padj)))  +
+      geom_point(size=0.8, color="black", alpha=.8) + 
+      geom_point(size=0.8, data=df_sig, aes(log2FoldChange, -log10(padj)), colour="red") +
+       geom_text_repel(size= size, 
+                    colour="black",
+                    segment.size=0.1, 
+                    nudge_x=0.06, 
+                    nudge_y=0.06, 
+                    data=df_label,
+                    aes(log2FoldChange, -log10(padj), label=gene_name), 
+                    max.iter= 200, 
+                    point.padding = 0.15, 
+                    segment.alpha = 1, 
+                    box.padding=.15,
+                    min.segment.length = unit(0.15, 'lines'),size=2.5) +
+    theme(
+      axis.text.x = element_text(size=12),
+      axis.text.y = element_text(size=12),
+      axis.title.x = element_text(size=14, margin = margin(t = 10, r = 0, b = 10, l = 0)),
+      axis.title.y = element_text(size=14, margin = margin(t = 0, r = 10, b = 0, l = 10)),
+      plot.margin =unit(c(.5,.5,.5,.5),"cm"),
+      plot.title = element_text(size = 11)
+    )
+  
+  return (p)
+}
+
+# Function to add correlation coefficients
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...) {
+    usr <- par("usr")
+    on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    Cor <- abs(cor(x, y)) # Remove abs function if desired
+    txt <- paste0(prefix, format(c(Cor, 0.123456789), digits = digits)[1])
+    if(missing(cex.cor)) {
+        cex.cor <- 0.4 / strwidth(txt)
+    }
+    text(0.5, 0.5, txt,
+         cex = 1 + cex.cor * Cor) # Resize the text by level of correlation
+}
+
+#### THESE FUNCTIONS ARE IMPORTED BY 'NANONORMITER' PACKAGE
+# FOR REFERENCE, HERE ARE THE QC CHECKS: 
+# imagingQC <- function(rcc){
+# 
+#     fovRatio = as.numeric(rcc$Lane_Attributes[3]) / as.numeric(rcc$Lane_Attributes[2])
+#     if (!(fovRatio > .75)) {return('Flag')}
+#     if (fovRatio > .75) {return('No flag')}
+# 
+# }
+# 
+# #### INPUT: rcc - input from rcc (use readRcc from NanoStringQCPro)
+# ####         low, high - the lower and upper limits for binding density
+# #### OUTPUT: flag for binding density
+# 
+# bindingDensityQC <- function(rcc,low,high){
+# 
+#     bd = as.numeric(rcc$Lane_Attributes[6])
+#     if(!(bd < high & bd > low)) {return('Flag')}
+#     if (bd < high & bd > low) {return('No flag')}
+# 
+# 
+# }
+# 
+# #### INPUT: rcc - input from rcc (use readRcc from NanoStringQCPro)
+# #### OUTPUT: flag for linearity for positive controls
+# 
+# positiveLinQC <- function(rcc){
+# 
+#     counts = rcc$Code_Summary
+#     posControls = as.numeric(counts$Count[grepl('POS_',counts$Name)])
+#     known = c(128,128/4,128/16,128/64,128/256,128/(256*4))
+#     r2 = summary(lm(sort(posControls)~sort(known)))$r.squared
+#     if(!(r2 > .95) | is.na(r2)) {return('Flag')}
+#     if(r2 > .95) {return('No flag')}
+# 
+# }
+# 
+# #### INPUT: rcc - input from rcc (use readRcc from NanoStringQCPro)
+# ####         numSD - number of standard deviations to calibrate the LOD
+# #### OUTPUT: flag for limit of detection
+# 
+# limitOfDetectionQC <- function(rcc,numSD = 0){
+#
+#     counts = rcc$Code_Summary
+#     posE = as.numeric(counts$Count[counts$Name == 'POS_E'])
+#     negControls = as.numeric(counts$Count[grepl('NEG',counts$Name)])
+#     if(!(posE > mean(negControls) + numSD*sd(negControls))) {return('Flag')}
+#     if (posE > mean(negControls) + numSD*sd(negControls)) {return('No flag')}
+# 
+# }
+##### HERE IS THE RUV CALCULATION AS IMPLEMENTED IN NANONORMITER()
+# RUV_total <- function(raw,pData,fData,k,hkgenes = NULL,exclude = NULL){
+# 
+#     library(RUVSeq)
+#     library(DESeq2)
+#     library(limma)
+#     library(matrixStats)
+# 
+#     if (!is.null(hkgenes)){
+# 
+#         fData(set)$Class[rownames(set) %in% hkgenes] = 'Housekeeping'
+# 
+#     }
+# 
+#     fData = fData[rownames(raw),]
+#     int = intersect(rownames(raw),rownames(fData))
+#     fData = fData[int,]
+#     raw = raw[int,]
+# 
+#     set <- newSeqExpressionSet(as.matrix(round(raw)),
+#                                phenoData=pData,
+#                                featureData=fData)
+# 
+#     cIdx <- rownames(set)[fData(set)$Class == "Housekeeping"]
+#     cIdx = cIdx[!(cIdx %in% exclude)]
+#     x <- as.factor(pData$Group)
+#     set <- betweenLaneNormalization(set, which="upper")
+#     set <- RUVg(set, cIdx, k=k)
+#     dds <- DESeqDataSetFromMatrix(counts(set),colData=pData(set),design=~1)
+#     rowData(dds) <- fData
+#     dds <- estimateSizeFactors(dds)
+#     dds <- estimateDispersionsGeneEst(dds)
+#     cts <- counts(dds, normalized=TRUE)
+#     disp <- pmax((rowVars(cts) - rowMeans(cts)),0)/rowMeans(cts)^2
+#     mcols(dds)$dispGeneEst <- disp
+#     dds <- estimateDispersionsFit(dds, fitType="mean")
+#     vsd <- varianceStabilizingTransformation(dds, blind=FALSE)
+#     mat <- assay(vsd)
+#     covars <- as.matrix(colData(dds)[,grep("W",colnames(colData(dds))),drop=FALSE])
+#     mat <- removeBatchEffect(mat, covariates=covars)
+#     assay(vsd) <- mat
+#     return(list(set = set,vsd = vsd))
+# 
+# }
+
+```
+
+## Import metadata
+
+```{r, import_meta, class.source = 'fold-show'}
+
+meta_df_full <- readxl::read_xlsx('cleaned_metadata.xlsx', sheet = 'Sheet1', col_names = TRUE, col_types = "guess")
+meta_df <- meta_df_full %>% dplyr::select(c(`file name`, batch, `study ID`, Age, Race, `prepregnancy BMI`, `current  BMI`, `Breast milk colllection date post delivary`, `Delivery type`))
+
+colnames(meta_df) <- c("filename","batch","SampleID","age","race","prepreg_BMI","curr_BMI","milk_col_dt", "delivery")
+meta_df$batch[28:40] <- "4"  #fix the singleton batch 
+
+## Overweight >= 25.  Obese >=30.
+meta_df <- meta_df %>%  dplyr::mutate(
+  status_ob = dplyr::case_when(
+    .data$prepreg_BMI < 25 ~ "Lean",
+    .data$prepreg_BMI >= 30 ~ "Obese",
+    (.data$prepreg_BMI >= 25 & .data$prepreg_BMI < 30) ~ "Overweight"
+    )
+)  
+
+```
+
+## Import data 
+
+### Create pheno and expr tables
+```{r, import_data, class.source = 'fold-show'}
+#getwd()
+files.RCC = list.files(".", full.names = TRUE)
+files.RCC = files.RCC[grepl('RCC',files.RCC)]
+
+head(files.RCC)
+
+ng = nrow(readRcc(files.RCC[1])$Code_Summary)
+ncol = length(files.RCC)
+
+raw_expression = as.data.frame(matrix(nrow = ng,ncol = length(files.RCC)+2))
+colnames(raw_expression)[1:2] = c('Gene','Class')
+pData = as.data.frame(matrix(nrow = length(files.RCC),ncol = 11))
+colnames(pData) = c('BCAC_ID','SampleID','Owner','Comments','Date','GeneRLF','SystemAPF','imagingQC',
+                    'bindingDensityQC','limitOfDetectionQC','positiveLinearityQC')
+raw_expression[,1:2] = readRcc(files.RCC[1])$Code_Summary[,c(2,1)]
+
+head(pData, 5)
+head(raw_expression, 5)
+```
+
+### Populate empty tables from RCC
+
+```{r, create_pData, message=FALSE,warning=FALSE}
+
+## NOTE: I have to override the positiveLinQC function for this panel b/c it uses two types of positive controls and that confuses the grepl search.  
+
+positiveLinQC <- function(rcc){
+
+     counts = rcc$Code_Summary
+     #posControls = as.numeric(counts$Count[grepl('POS_',counts$Name)])
+     posControls = as.numeric(counts$Count[grepl('^POS_',counts$Name)])
+     known = c(128,128/4,128/16,128/64,128/256,128/(256*4))
+     r2 = summary(lm(sort(posControls)~sort(known)))$r.squared
+     if(!(r2 > .95) | is.na(r2)) {return('Flag')}
+     if(r2 > .95) {return('No flag')}
+ 
+}
+
+## Override this function to account for two types of Neg controls.  
+limitOfDetectionQC <- function(rcc,numSD = 0){
+  counts = rcc$Code_Summary
+  posE = as.numeric(counts$Count[counts$Name == 'POS_E'])
+  negControls = as.numeric(counts$Count[grepl('^NEG',counts$Name)])
+  if(!(posE > mean(negControls) + numSD*sd(negControls))) {return('Flag')}
+  if (posE > mean(negControls) + numSD*sd(negControls)) {return('No flag')}
+  }
+
+## 
+## Populate pData and raw expr tables from RCC files
+for (i in 1:length(files.RCC)){
+  #i = 1 
+  print(i)
+  rcc = readRcc(files.RCC[i])
+  raw = rcc$Code_Summary
+  
+  raw_expression[,i+2] = as.numeric(raw$Count)
+  #colnames(raw_expression)[i+2] = strsplit(files.RCC[i],'_')[[1]][2:4]
+  pData[i,2:7] = as.vector(rcc$Sample_Attributes)
+  pData$imagingQC[i] = imagingQC(rcc)
+  pData$bindingDensityQC[i] = bindingDensityQC(rcc,.05,2.25)
+  pData$limitOfDetectionQC[i] = limitOfDetectionQC(rcc)
+  pData$positiveLinearityQC[i] = positiveLinQC(rcc)
+}
+
+## Munge pData and metadata together; create treatment classes
+pData$SampleID <- meta_df$SampleID
+pData <- dplyr::left_join(pData, meta_df, by = "SampleID")
+rownames(pData) <- pData$SampleID 
+
+colnames(raw_expression)[3:82] <- pData$SampleID
+
+head(pData)
+```
+
+## Apply RUVg normalization 
+
+This code block does more setup and preparation for analysis.  
+```{r, make_pData, warning=FALSE}
+raw = raw_expression[,-c(1:2)]
+fData = raw_expression[,c(1:2)]
+rownames(raw) = fData$Gene
+cIdx <- fData$Gene[fData$Class == "Housekeeping"]
+pData$HK_Gene_Miss = colSums(raw[cIdx,] == 0)
+rownames(fData) = fData$Gene
+rownames(raw) = fData$Gene
+#rownames(pData) = colnames(raw)
+
+#
+```
+Now, we remove correlated negative control genes and apply RUVg normalization with k=2 as decided from prior analysis.  
+
+```{r,RUV_normalization, results='hide', message=FALSE}
+norm.dat.k2 <- NanoNormIter::RUV_total(raw,pData,fData,k = 2)
+```
+
+## BMI DE analysis accounting for postpartum date
+
+BMI obese vs lean accounting for postpartum quartiles. 
+
+```{r, DESeq2_OB2, class.source = 'fold-show'}
+
+dat <- norm.dat.k2$set
+#dat <- dat[,dat$batch %in% c("1","2","3","5","6","7","8","9")]  ## Drop outlier batch 4
+dat_ob <- dat[,dat$status_ob %in% c("Lean","Obese")]  ## drop overweight samples, keep obese + lean 
+pData_2 <- pData(dat_ob)
+pData_2 <- pData_2 %>% as_tibble() %>% mutate(milk_col_factor = as.factor(ntile(milk_col_dt, 4))) #Quartile bins of collection date
+
+dds_ob <- DESeqDataSetFromMatrix(countData = counts(dat_ob[26:823,]),
+                              colData = pData_2,
+                              design = ~ W_1 + W_2 + milk_col_factor + status_ob)  
+dds_ob <- DESeq(dds_ob, fitType = 'local')
+
+```
+
+We are comparing samples with prepreg BMI < 25 (lean) and BMI > 30 (Obese).   
+```{r}
+res_OB_MCF <- as.data.frame(results(dds_ob,contrast = c('status_ob','Obese','Lean')))
+```
+
+
+### DEG table 
+
+```{r}
+## Table of top DE genes 
+res_OB_MCF_sig <- res_OB_MCF %>% 
+  arrange(padj) %>% 
+  filter(padj < 0.1) %>% 
+  dplyr::select(c(padj, baseMean, log2FoldChange)) %>% 
+  mutate(across(c(1:3), ~round(.x, digits=3)))
+  
+res_OB_MCF_sig
+```
+
+```{r, volPlot, dpi=300}
+df <- res_OB_MCF %>% mutate(gene_name = rownames(.)) 
+p <- do_vol_plot(df = df, sig = 0.1, fc = 0.3, size = 2)
+p <- p + ggtitle("Volcano Plot: Obese vs Lean Controlled for Postpartum Date, red=p_adj<0.05")
+p
+```
+
+## Count plots 
+
+```{r}
+
+plot_miRNA <- function(dds, gene, intgroup) {
+  df <- plotCounts(dds, gene = gene, intgroup = intgroup, returnData = TRUE)
+  p <- ggpubr::ggboxplot(df, 
+               x=intgroup, 
+               y='count', 
+               fill = intgroup,
+               add = "jitter", 
+               #label = rownames(df), 
+               #label.select = list(criteria = "`y` > 1300"),
+               #repel = TRUE,
+               xlab = "BMI status",
+               ylab = "Size-Factor Normalized Counts (DESeq)",
+               title = paste0(gene, "  Counts by BMI Status")) 
+  return (p) 
+}
+
+
+X <- rownames(res_OB_MCF_sig[1:10,])
+
+for (i in X){
+  p <- plot_miRNA(gene=i, dds=dds_ob, intgroup="status_ob")
+  show(p)
+}
+
+```
+
+
+## Postpartum Date DE analysis 
+
+Comparing miRNA profiles between the group of sample collection date <40 and the group of the rest.  Control the BMI before comparing these groups.
+
+```{r, milk_dat_subset2, class.source = 'fold-show'}
+
+dat <- norm.dat.k2$set
+#dat_drop4 <- dat[,dat$batch %in% c("1","2","3","5","6","7","8","9")]
+dat <- dat[, dat$status_ob %in% c("Lean","Obese")] 
+pData <- pData(dat)
+pData <- pData %>% as_tibble() %>% mutate(milk_col_factor = as.factor(milk_col_dt < 40)) #
+
+dds_day40 <- DESeqDataSetFromMatrix(countData = counts(dat[26:823,]),
+                              colData = pData,
+                              design = ~ W_1 + W_2 + status_ob + milk_col_factor)  
+
+dds_day40 <- DESeq(dds_day40, fit='local')
+
+```
+
+```{r}
+res_day40 <- as.data.frame(results(dds_day40,contrast = c('milk_col_factor','TRUE','FALSE')))
+```
+
+
+### DEG table 
+
+```{r}
+## Table of top DE genes 
+res_day40_filt <- res_day40 %>% 
+  arrange(padj) %>% 
+  filter(padj < 0.1) %>% 
+  dplyr::select(c(padj, baseMean, log2FoldChange)) %>% 
+  mutate(across(c(1:3), ~round(.x, digits=3)))
+  
+  
+res_day40_filt
+```
+```{r, volPlot2, dpi=300}
+df <- res_day40 %>% mutate(gene_name = rownames(.)) 
+p <- do_vol_plot(df = df, sig = 0.1, fc = 0.5, size = 2.5)
+p <- p + ggtitle("Before Day 40 vs After Day 40, controlled for BMI; red = padj < 0.1")
+p
+```
+
+## Count plots 
+
+```{r}
+
+plot_miRNA <- function(dds, gene, intgroup) {
+  df <- plotCounts(dds, gene = gene, intgroup = intgroup, returnData = TRUE)
+  p <- ggpubr::ggboxplot(df, 
+               x=intgroup, 
+               y='count', 
+               fill = intgroup,
+               add = "jitter", 
+               #label = rownames(df), 
+               #label.select = list(criteria = "`y` > 1300"),
+               #repel = TRUE,
+               xlab = "Postpartum Collection > 40 days",
+               ylab = "Size-Factor Normalized Counts (DESeq)",
+               title = paste0(gene, "  Counts by PostPartum Collection Date")) 
+  return (p) 
+}
+
+
+X <- rownames(res_day40_filt[1:10,])
+
+for (i in X){
+  p <- plot_miRNA(gene=i, dds=dds_day40, intgroup="milk_col_factor")
+  show(p)
+}
+
+```
+
+
+## Most abundant miRNAs
+
+```{r, dpi=200, fig.width=9}
+#get the normalized count matrix
+metadata <- pData %>% select(c("SampleID","status_ob", "milk_col_factor"))
+norm_dat <- EDASeq::normCounts(norm.dat.k2$set)
+norm_dat <- norm_dat[,metadata$SampleID]
+#calculate rowsums and sort 
+top10 <- rowSums(norm_dat[26:823,]) %>% as_tibble(rownames = "miRNA") %>% arrange(desc(value)) %>% head(10)
+
+##
+top10
+
+
+
+top10_counts <- norm_dat[top10$miRNA,] %>% 
+  as_tibble(rownames="gene") %>%
+  pivot_longer(!gene, names_to = "sample", values_to = "counts") %>%
+  left_join(., metadata, by=c("sample" = "SampleID")) %>% 
+  arrange(sample)
+
+p <- ggplot(top10_counts, aes(fill=gene, y=counts, x=sample)) + geom_bar(position="fill",stat="identity")
+p <- p + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+p <- p + facet_wrap(vars(status_ob), scales = "free") + ylab("Percent Abundance")
+p
+```
+
+
+# Computational Environment 
+
+```{r, sesh}
+sessionInfo()
+```

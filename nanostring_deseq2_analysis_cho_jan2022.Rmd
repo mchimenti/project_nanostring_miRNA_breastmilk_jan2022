@@ -1127,6 +1127,69 @@ p
 
 ```
 
+## DE analysis collection date < 40
+
+Feb 22, 2022 request: 
+
+Please compare the miRNA profiles between the group of sample collection date <40 and the group of the rest. We may need to exclude batch 4s, and control the BMI before comparing these groups.
+
+```{r, milk_dat_subset2, class.source = 'fold-show'}
+
+dat <- norm.dat.k2$set
+dat_drop4 <- dat[,dat$batch %in% c("1","2","3","5","6","7","8","9")]
+pData_drop4 <- pData(dat_drop4)
+pData_drop4 <- pData_drop4 %>% as_tibble() %>% mutate(milk_col_factor = as.factor(milk_col_dt < 40)) #
+
+dds_drop4_day40 <- DESeqDataSetFromMatrix(countData = counts(dat_drop4[26:823,]),
+                              colData = pData_drop4,
+                              design = ~ W_1 + W_2 + status_ov + milk_col_factor)  
+
+dds_drop4_day40 <- DESeq(dds_drop4_day40, fit='local')
+
+```
+
+```{r}
+res_OB_drop4_day40 <- as.data.frame(results(dds_drop4_day40,contrast = c('milk_col_factor','TRUE','FALSE')))
+```
+
+
+### DEG table 
+
+```{r}
+## Table of top DE genes 
+res_OB_drop4_day40 <- res_OB_drop4_day40 %>% 
+  arrange(padj) %>% 
+  filter(padj < 0.1) %>% 
+  dplyr::select(c(padj, baseMean, log2FoldChange)) %>% 
+  mutate(across(c(1:3), ~round(.x, digits=3)))
+  
+  
+res_OB_drop4_day40
+```
+
+```{r}
+df <- plotCounts(dds_drop4_day40, gene = "hsa-miR-27b-3p|0", intgroup = c("status_ov","milk_col_factor"), returnData = TRUE)
+p <- ggboxplot(df, 
+               x='milk_col_factor', 
+               y='count', 
+               #fill = "status_ov",
+               add = "jitter", 
+               label = rownames(df), 
+               label.select = list(criteria = "`y` > 50"),
+               repel = TRUE) 
+
+p <- p + ggtitle("hsa-miR-27b-3p|0 Counts by Status")
+p
+
+```
+
+
+```{r, volPlot3}
+df <- res_OB_drop4_day40 %>% mutate(gene_name = rownames(.)) %>% filter(padj < 0.1) 
+p <- do_vol_plot(df = df, sig = 0.05, fc = 0.3, size = 2)
+p <- p + ggtitle("Before Day 40 vs After Day 40, controlled for BMI; red = padj<0.05")
+p
+```
 
 # Conclusions
 
